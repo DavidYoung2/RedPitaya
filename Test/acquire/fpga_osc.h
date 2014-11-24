@@ -247,8 +247,11 @@ int osc_fpga_cnv_time_range_to_dec(int time_range);
 int osc_fpga_cnv_time_to_smpls(float time, int dec_factor);
 /* Converts voltage in [V] to ADC counts */
 int osc_fpga_cnv_v_to_cnt(float voltage);
-/* Converts ADC ounts to [V] */
+/* Converts ADC counts to [V] */
+float osc_fpga_cnv_cnt_to_v_with_calib(int cnts, float max_adc_v,
+                            int calib_dc_off, float user_dc_off);
 float osc_fpga_cnv_cnt_to_v(int cnts);
+float osc_fpga_calc_adc_max_v(uint32_t fe_gain_fs, int probe_att);
 
 /* Debug - dump to stderr current parameter settings (leave out data) */
 void osc_fpga_dump_regs(void);

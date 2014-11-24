@@ -38,9 +38,22 @@ typedef struct rp_osc_params_s {
     float max_val;
 } rp_osc_params_t;
 
+//ERG :: taken from main.h of scope app
+/* Signal measurement results structure - filled in worker and updated when
+ * also measurement signal is stored from worker 
+ */
+typedef struct rp_osc_meas_res_s {
+    float min;
+    float max;
+    float amp;
+    float avg;
+    float freq;
+    float period;
+} rp_osc_meas_res_t;
+
 /* Parameters indexes */
 /** Number of parameters defined in main module */
-#define PARAMS_NUM      14
+#define PARAMS_NUM      16//ERG :: was 14
 /** Minimal time in output time vector */
 #define MIN_GUI_PARAM    0
 /** Maximal time in output time vector */
@@ -70,6 +83,10 @@ typedef struct rp_osc_params_s {
 /** Channel2 gain */
 #define GAIN2_PARAM      13
 
+//ERG adding more !!!!
+#define GEN_DC_OFFS_1     14
+#define GEN_DC_OFFS_2     15
+
 /** Output signal length  */
 #define SIGNAL_LENGTH (16*1024)
 /** Number of output signals */
@@ -77,7 +94,7 @@ typedef struct rp_osc_params_s {
 
 /** @} */
 
-int rp_app_init(void);
+int rp_app_init(int calibration);//ERG
 int rp_app_exit(void);
 int rp_set_params(float *p, int len);
 int rp_get_params(float **p);

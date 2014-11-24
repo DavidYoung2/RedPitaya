@@ -24,6 +24,7 @@
 #include "main_osc.h"
 #include "fpga_osc.h"
 #include "worker.h"
+#include "calib.h"//ERG
 
 /** 
  * GENERAL DESCRIPTION:
@@ -80,8 +81,15 @@ static rp_osc_params_t rp_main_params[PARAMS_NUM] = {
        *    1 - HV */              0, 0, 0,         0,         1 },
     { /** Channel2 gain:
        *    0 - LV
-       *    1 - HV */              0, 0, 0,         0,         1 }
+       *    1 - HV */              0, 0, 0,         0,         1 },
+    { /* gen_DC_offs_1 - DC offset for channel 1 expressed in [V] requested by 
+       * GUI */                    0, 1, 0,      -100,       100 },
+    { /* gen_DC_offs_2 - DC offset for channel 2 expressed in [V] requested by 
+       * GUI */                    0, 1, 0,      -100,       100 }
 };
+
+rp_calib_params_t rp_main_calib_params;//ERG
+rp_calib_params_t *rp_calib_params = NULL;//ERG
 
 
 /** @brief Returns application description.
@@ -102,12 +110,22 @@ const char *rp_app_desc(void)
  * @retval -1 Failure
  * @retval 0  Success
 */
-int rp_app_init(void)
+int rp_app_init(int calibration)//ERG
 {
     float p[PARAMS_NUM];
     int i;
 
-    if(rp_osc_worker_init() < 0) {
+    if (calibration == 1) {//ERG
+        rp_default_calib_params(&rp_main_calib_params);
+        if(rp_read_calib_params(&rp_main_calib_params) < 0) {
+            fprintf(stderr, "rp_read_calib_params() failed, using default"
+                " parameters\n");
+        } else {
+            rp_calib_params = &rp_main_calib_params;
+        }
+    }
+
+    if(rp_osc_worker_init(rp_calib_params) < 0) {//ERG
         return -1;
     }
 

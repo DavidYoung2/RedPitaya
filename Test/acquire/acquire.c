@@ -55,7 +55,7 @@ const char *g_argv0 = NULL;
 /** Oscilloscope module parameters as defined in main module
  * @see rp_main_params
  */
-float t_params[PARAMS_NUM] = { 0, 1e6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+float t_params[PARAMS_NUM] = { 0, 1e6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };//ERG now 16 params
 
 /** Max decimation index */
 #define DEC_MAX 6
@@ -71,6 +71,8 @@ void usage() {
             "\n"
             "Usage: %s [OPTION]... SIZE <DEC>\n"
             "\n"
+            "  --average       -a    Report average of values (default: disabled).\n"//ERG
+            "  --calibration   -c    Use calibration stored in EEPROM (default: disabled).\n"//ERG
             "  --equalization  -e    Use equalization filter in FPGA (default: disabled).\n"
             "  --shaping       -s    Use shaping filter in FPGA (default: disabled).\n"
             "  --gain1=g       -1 g  Use Channel 1 gain setting g [lv, hv] (default: lv).\n"
@@ -114,6 +116,8 @@ int main(int argc, char *argv[])
     g_argv0 = argv[0];
     int equal = 0;
     int shaping = 0;
+    int average = 0;//ERG
+    int calibration = 0;//ERG
 
     if ( argc < MINARGS ) {
         usage();
@@ -123,6 +127,8 @@ int main(int argc, char *argv[])
     /* Command line options */
     static struct option long_options[] = {
             /* These options set a flag. */
+            {"average",      no_argument,       0, 'a'},//ERG
+            {"calibration",  no_argument,       0, 'c'},//ERG
             {"equalization", no_argument,       0, 'e'},
             {"shaping",      no_argument,       0, 's'},
             {"gain1",        required_argument, 0, '1'},
@@ -131,7 +137,7 @@ int main(int argc, char *argv[])
             {"help",         no_argument,       0, 'h'},
             {0, 0, 0, 0}
     };
-    const char *optstring = "es1:2:vh";
+    const char *optstring = "aces1:2:vh";//ERG
 
     /* getopt_long stores the option index here. */
     int option_index = 0;
@@ -139,6 +145,14 @@ int main(int argc, char *argv[])
     int ch = -1;
     while ( (ch = getopt_long( argc, argv, optstring, long_options, &option_index )) != -1 ) {
         switch ( ch ) {
+
+        case 'a'://ERG
+            average = 1;
+            break;
+
+        case 'c'://ERG
+            calibration = 1;
+            break;
 
         case 'e':
             equal = 1;
@@ -230,7 +244,7 @@ int main(int argc, char *argv[])
 
 
     /* Initialization of Oscilloscope application */
-    if(rp_app_init() < 0) {
+    if(rp_app_init(calibration) < 0) {//ERG
         fprintf(stderr, "rp_app_init() failed!\n");
         return -1;
     }
@@ -261,9 +275,38 @@ int main(int argc, char *argv[])
                  * s[1][i] - Channel ADC1 raw signal
                  * s[2][i] - Channel ADC2 raw signal
                  */
-		
-                for(i = 0; i < MIN(size, sig_len); i++) {
-                    printf("%7d %7d\n", (int)s[1][i], (int)s[2][i]);
+                if (average == 1) {
+                    if (calibration == 0) {
+                        long long ch1_average = 0;
+                        long long ch2_average = 0;
+                        for(i = 0; i < MIN(size, sig_len); i++) {
+                            ch1_average += (int)s[1][i];
+                            ch2_average += (int)s[2][i];
+                        }
+                        ch1_average /= MIN(size, sig_len);
+                        ch2_average /= MIN(size, sig_len);
+                        printf("%7lld %7lld\n", ch1_average, ch2_average);
+                    } else {
+                        long double ch1_average = 0.0;
+                        long double ch2_average = 0.0;
+                        for(i = 0; i < MIN(size, sig_len); i++) {
+                            ch1_average += s[1][i];
+                            ch2_average += s[2][i];
+                        }
+                        ch1_average /= MIN(size, sig_len);
+                        ch2_average /= MIN(size, sig_len);
+                        printf("%.4Lf %.4Lf\n", ch1_average, ch2_average);
+                    }
+                }
+                else
+		if (calibration == 0) {
+                    for(i = 0; i < MIN(size, sig_len); i++) {
+                        printf("%7d %7d\n", (int)s[1][i], (int)s[2][i]);
+                    }
+                } else {
+                    for(i = 0; i < MIN(size, sig_len); i++) {
+                        printf("%.4f %.4f\n", s[1][i], s[2][i]);
+                    }
                 }
                 break;
             }

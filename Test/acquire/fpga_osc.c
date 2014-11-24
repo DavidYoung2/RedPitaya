@@ -540,6 +540,53 @@ int osc_fpga_cnv_v_to_cnt(float voltage)
     return adc_cnts;
 }
 
+/**
+ * @brief Converts ADC counts to voltage [V]
+ *
+ * Function is used to publish captured signal data to external world in user units.
+ * Calculation is based on maximal voltage, which can be applied on ADC inputs and
+ * calibrated and user defined DC offsets.
+ *
+ * @param[in] cnts           Captured Signal Value, expressed in ADC counts
+ * @param[in] adc_max_v      Maximal ADC voltage, specified in [V]
+ * @param[in] calib_dc_off   Calibrated DC offset, specified in ADC counts
+ * @param[in] user_dc_off    User specified DC offset, specified in [V]
+ * @retval    float          Signal Value, expressed in user units [V]
+ */
+float osc_fpga_cnv_cnt_to_v_with_calib(int cnts, float adc_max_v,
+                            int calib_dc_off, float user_dc_off)
+{
+    int m;
+    float ret_val;
+
+    //printf("fpga_osc.c adc_max_v=%f calib_dc_off=%d user_dc_off=%f\n", adc_max_v, calib_dc_off, user_dc_off);
+    /* check sign */
+    if(cnts & (1<<(c_osc_fpga_adc_bits-1))) {
+        /* negative number */
+        m = -1 *((cnts ^ ((1<<c_osc_fpga_adc_bits)-1)) + 1);
+    } else {
+        /* positive number */
+        m = cnts;
+    }
+
+    /* adopt ADC count with calibrated DC offset */
+    m += calib_dc_off;
+
+    /* map ADC counts into user units */
+    if(m < (-1 * (1<<(c_osc_fpga_adc_bits-1))))
+        m = (-1 * (1<<(c_osc_fpga_adc_bits-1)));
+    else if(m > (1<<(c_osc_fpga_adc_bits-1)))
+        m =  (1<<(c_osc_fpga_adc_bits-1));
+
+    ret_val =  (m * adc_max_v / 
+                (float)(1<<(c_osc_fpga_adc_bits-1)));
+
+    /* and adopt the calculation with user specified DC offset */
+    ret_val += user_dc_off;
+
+    return ret_val;
+}
+
 /** @brief Converts ADC counts to voltage
  *
  * This function converts ADC counts to voltage (in [V])
@@ -559,6 +606,30 @@ float osc_fpga_cnv_cnt_to_v(int cnts)
         m = cnts;
         /* positive number */
     }
+
     return m;
+}
+
+/*----------------------------------------------------------------------------*/
+/**
+ * @brief Calculates maximum [V] in respect to set & calibration parameters
+ *
+ * Function is used to calculate the maximal voltage which can be applied on ADC inputs.
+ * This calculation is based on calibrated Front End Full Scale Gain setting and configured
+ * Probe Attenuation.
+ *
+ * @param[in] fe_gain_fs     Front End Full Scale Gain
+ * @param[in] probe_att      Probe attenuation
+ * @retval    float          Maximum voltage, expressed in [V]
+ */
+float osc_fpga_calc_adc_max_v(uint32_t fe_gain_fs, int probe_att)
+{
+    float max_adc_v;
+    int probe_att_fact = (probe_att > 0) ? 10 : 1;
+
+    max_adc_v = 
+        fe_gain_fs/(float)((uint64_t)1<<32) * 100 * (probe_att_fact);
+
+    return max_adc_v;
 }
 

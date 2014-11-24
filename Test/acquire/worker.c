@@ -90,6 +90,10 @@ float               **rp_tmp_signals; /* used for calculation from worker */
 /** Pointers to the FPGA input signal buffers for Channel A and B */
 int                  *rp_fpga_cha_signal, *rp_fpga_chb_signal;
 
+/* Calibration parameters read from EEPROM */
+rp_calib_params_t *wrkr_rp_calib_params = NULL;//ERG
+const int           C_osc_fpga_adc_bits = 14;//ERG
+
 /** @brief Initializes worker module
  *
  * This function starts new worker thread, initializes internal structures 
@@ -98,13 +102,15 @@ int                  *rp_fpga_cha_signal, *rp_fpga_chb_signal;
  * @retval -1 Failure
  * @retval 0 Success
 */
-int rp_osc_worker_init(void)
+int rp_osc_worker_init(rp_calib_params_t *calib_params)//ERG
 {
     int ret_val;
 
     rp_osc_ctrl               = rp_osc_idle_state;
     rp_osc_params_dirty       = 0;
     rp_osc_params_fpga_update = 0;
+
+    wrkr_rp_calib_params = calib_params;//ERG
 
     /* Create output signal structure */
     rp_cleanup_signals(&rp_osc_signals);
@@ -294,6 +300,54 @@ int rp_osc_set_signals(float **source, int index)
     return 0;
 }
 
+/*----------------------------------------------------------------------------------*/
+int rp_osc_meas_clear(rp_osc_meas_res_t *ch_meas)
+{
+    ch_meas->min = 1e9;
+    ch_meas->max = -1e9;
+    ch_meas->amp = 0;
+    ch_meas->avg = 0;
+    ch_meas->freq = 0;
+    ch_meas->period = 0;
+
+    return 0;
+}
+
+/*----------------------------------------------------------------------------------*/
+int rp_osc_adc_sign(int in_data)
+{
+    int s_data = in_data;
+    if(s_data & (1<<(C_osc_fpga_adc_bits-1)))
+        s_data = -1 * ((s_data ^ ((1<<C_osc_fpga_adc_bits)-1)) + 1);
+    return s_data;
+}
+
+/*----------------------------------------------------------------------------------*/
+int rp_osc_meas_min_max(rp_osc_meas_res_t *ch_meas, int sig_data)
+{
+    int s_data = rp_osc_adc_sign(sig_data);
+
+    if(ch_meas->min > s_data)
+        ch_meas->min = s_data;
+    if(ch_meas->max < s_data)
+        ch_meas->max = s_data;
+
+    ch_meas->avg += s_data;
+
+    return 0;
+}
+
+int rp_update_meas_data(rp_osc_meas_res_t ch1_meas, rp_osc_meas_res_t ch2_meas)
+{
+    return 0;//do nothing
+}
+
+int rp_osc_set_meas_data(rp_osc_meas_res_t ch1_meas, rp_osc_meas_res_t ch2_meas)
+{
+    rp_update_meas_data(ch1_meas, ch2_meas);
+    return 0;
+}
+
 /** @brief Main worker thread function.
  *
  * This is main worker thread function which implements continuous loop. This
@@ -313,7 +367,12 @@ void *rp_osc_worker_thread(void *args)
     uint32_t              trig_source = 0;
     int                   params_dirty = 0;
 
-   
+    rp_osc_meas_res_t ch1_meas, ch2_meas;
+    float ch1_max_adc_v = 1, ch2_max_adc_v = 1;
+    if (wrkr_rp_calib_params != NULL) {
+        ch1_max_adc_v = osc_fpga_calc_adc_max_v(wrkr_rp_calib_params->fe_ch1_fs_g_hi, 0);
+        ch2_max_adc_v = osc_fpga_calc_adc_max_v(wrkr_rp_calib_params->fe_ch2_fs_g_hi, 0);
+    }
 
     pthread_mutex_lock(&rp_osc_ctrl_mutex);
     old_state = state = rp_osc_ctrl;
@@ -467,13 +526,28 @@ void *rp_osc_worker_thread(void *args)
 		
         
             /* Triggered, decimate & convert the values */
+            if (wrkr_rp_calib_params != NULL) {
+            rp_osc_meas_clear(&ch1_meas);
+            rp_osc_meas_clear(&ch2_meas);
+            //printf("ch1_max_adc_v=%f\n", ch1_max_adc_v);
+            //printf("curr_params[GEN_DC_OFFS_1].value=%f\n", curr_params[GEN_DC_OFFS_1].value);
+            rp_osc_decimate_with_calib((float **)&rp_tmp_signals[1], &rp_fpga_cha_signal[0],
+                            (float **)&rp_tmp_signals[2], &rp_fpga_chb_signal[0],
+                            (float **)&rp_tmp_signals[0], dec_factor, 
+                            curr_params[MIN_GUI_PARAM].value,
+                            curr_params[MAX_GUI_PARAM].value,
+                            curr_params[TIME_UNIT_PARAM].value, 
+                            &ch1_meas, &ch2_meas, ch1_max_adc_v, ch2_max_adc_v,
+                            curr_params[GEN_DC_OFFS_1].value,
+                            curr_params[GEN_DC_OFFS_2].value);
+            } else {
             rp_osc_decimate((float **)&rp_tmp_signals[1], &rp_fpga_cha_signal[0],
                             (float **)&rp_tmp_signals[2], &rp_fpga_chb_signal[0],
                             (float **)&rp_tmp_signals[0], dec_factor, 
                             curr_params[MIN_GUI_PARAM].value,
                             curr_params[MAX_GUI_PARAM].value,
                             curr_params[TIME_UNIT_PARAM].value);
-        
+            }
 
         /* check again for change of state */
         pthread_mutex_lock(&rp_osc_ctrl_mutex);
@@ -557,6 +631,90 @@ int rp_osc_prepare_time_vector(float **out_signal, int dec_factor,
  *
  * @retval 0 Always returns 0.
 */
+int rp_osc_decimate_with_calib(float **cha_signal, int *in_cha_signal,
+                    float **chb_signal, int *in_chb_signal,
+                    float **time_signal, int dec_factor, 
+                    float t_start, float t_stop, int time_unit,
+                    rp_osc_meas_res_t *ch1_meas, rp_osc_meas_res_t *ch2_meas,
+                    float ch1_max_adc_v, float ch2_max_adc_v,
+                    float ch1_user_dc_off, float ch2_user_dc_off)
+{
+    int t_start_idx, t_stop_idx;
+    float smpl_period = c_osc_fpga_smpl_period * dec_factor;
+    int   t_unit_factor = rp_osc_get_time_unit_factor(time_unit);
+    int t_step;
+    int in_idx, out_idx, t_idx;
+    int wr_ptr_curr, wr_ptr_trig;
+
+    float *cha_s = *cha_signal;
+    float *chb_s = *chb_signal;
+    float *t = *time_signal;
+    
+    /* If illegal take whole frame */
+    if(t_stop <= t_start) {
+        t_start = 0;
+        t_stop = (OSC_FPGA_SIG_LEN-1) * smpl_period;
+    }
+    
+    /* convert time to samples */
+    t_start_idx = round(t_start / smpl_period);
+    t_stop_idx  = round(t_stop / smpl_period);
+
+    if((((t_stop_idx-t_start_idx)/(float)(SIGNAL_LENGTH-1))) < 1)
+        t_step = 1;
+    else {
+        /* ceil was used already in rp_osc_main() for parameters, so we can easily
+         * use round() here 
+         */
+        t_step = round((t_stop_idx-t_start_idx)/(float)(SIGNAL_LENGTH-1));
+    }
+    osc_fpga_get_wr_ptr(&wr_ptr_curr, &wr_ptr_trig);
+    in_idx = wr_ptr_trig + t_start_idx - 3;
+
+    if(in_idx < 0) 
+        in_idx = OSC_FPGA_SIG_LEN + in_idx;
+    if(in_idx >= OSC_FPGA_SIG_LEN)
+        in_idx = in_idx % OSC_FPGA_SIG_LEN;
+
+    /* First perform measurements on non-decimated signal:
+     *  - min, max - performed in the loop
+     *  - avg, amp - performed after the loop
+     *  - freq, period - performed in the next decimation loop
+     */
+    for(out_idx=0; out_idx < OSC_FPGA_SIG_LEN; out_idx++) {
+        rp_osc_meas_min_max(ch1_meas, in_cha_signal[out_idx]);
+        rp_osc_meas_min_max(ch2_meas, in_chb_signal[out_idx]);
+    }
+
+    for(out_idx=0, t_idx=0; out_idx < SIGNAL_LENGTH; 
+        out_idx++, in_idx+=t_step, t_idx+=t_step) {
+        /* Wrap the pointer */
+        if(in_idx >= OSC_FPGA_SIG_LEN)
+            in_idx = in_idx % OSC_FPGA_SIG_LEN;
+
+        cha_s[out_idx] = osc_fpga_cnv_cnt_to_v_with_calib(in_cha_signal[in_idx], ch1_max_adc_v,
+                                               wrkr_rp_calib_params->fe_ch1_dc_offs,
+                                               ch1_user_dc_off);
+
+        chb_s[out_idx] = osc_fpga_cnv_cnt_to_v_with_calib(in_chb_signal[in_idx], ch2_max_adc_v,
+                                               wrkr_rp_calib_params->fe_ch2_dc_offs,
+                                               ch2_user_dc_off);
+
+        t[out_idx] = (t_start + (t_idx * smpl_period)) * t_unit_factor;
+
+        /* A bug in FPGA? - Trig & write pointers not sample-accurate. */
+        if ( (dec_factor > 64) && (out_idx == 1) ) {
+            int i;
+            for (i=0; i < out_idx; i++) {
+                cha_s[i] = cha_s[out_idx];
+                chb_s[i] = chb_s[out_idx];
+            }
+        }
+    }
+
+    return 0;
+}
+
 int rp_osc_decimate(float **cha_signal, int *in_cha_signal,
                     float **chb_signal, int *in_chb_signal,
                     float **time_signal, int dec_factor, 
@@ -612,7 +770,6 @@ int rp_osc_decimate(float **cha_signal, int *in_cha_signal,
 
     
     
-    
     for(out_idx=0, t_idx=0; out_idx < SIGNAL_LENGTH; 
         out_idx++, in_idx+=t_step, t_idx+=t_step) {
         /* Wrap the pointer */
@@ -663,8 +820,8 @@ int rp_osc_decimate_partial(float **cha_out_signal, int *cha_in_signal,
                             int last_wr_ptr, int step_wr_ptr, int next_out_idx,
                             float t_start, int dec_factor, int time_unit)
 {
-    float *cha_out = *cha_out_signal;
-    float *chb_out = *chb_out_signal;
+    //float *cha_out = *cha_out_signal;//ERG :: removes compiler error
+    //float *chb_out = *chb_out_signal;//ERG :: removes compiler error
     float *t_out   = *time_out_signal;
     int    in_idx = *next_wr_ptr;
 
@@ -690,8 +847,9 @@ int rp_osc_decimate_partial(float **cha_out_signal, int *cha_in_signal,
         if((in_idx >= curr_ptr) && (diff_ptr > 0) && (diff_ptr < 100))
             break;
 
-        cha_out[next_out_idx] = osc_fpga_cnv_cnt_to_v(cha_in_signal[in_idx]);
-        chb_out[next_out_idx] = osc_fpga_cnv_cnt_to_v(chb_in_signal[in_idx]);
+        //ERG :: note that rp_osc_decimate_partial is not used, so don't care about next 2 lines
+        //cha_out[next_out_idx] = osc_fpga_cnv_cnt_to_v(cha_in_signal[in_idx]);
+        //chb_out[next_out_idx] = osc_fpga_cnv_cnt_to_v(chb_in_signal[in_idx]);
         t_out[next_out_idx]   = 
             (t_start + ((next_out_idx*step_wr_ptr)*smpl_period))*t_unit_factor;
 

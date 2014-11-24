@@ -16,6 +16,7 @@
 #define __WORKER_H
 
 #include "main_osc.h"
+#include "calib.h"
 
 /** @defgroup worker_h worker_h
  * @{
@@ -45,7 +46,7 @@ typedef enum rp_osc_worker_state_e {
 
 /** @} */
 
-int rp_osc_worker_init(void);
+int rp_osc_worker_init(rp_calib_params_t *calib_params);//ERG
 int rp_osc_worker_exit(void);
 int rp_osc_worker_change_state(rp_osc_worker_state_t new_state);
 int rp_osc_worker_update_params(rp_osc_params_t *params, int fpga_update);
@@ -75,10 +76,19 @@ int rp_osc_prepare_time_vector(float **out_signal, int dec_factor,
  * TODO: Remove time vector generation from these functions, it should
  * be created at the beginning
  */
+int rp_osc_decimate_with_calib(float **cha_signal, int *in_cha_signal,
+                    float **chb_signal, int *in_chb_signal,
+                    float **time_signal, int dec_factor, 
+                    float t_start, float t_stop, int time_unit,
+                    rp_osc_meas_res_t *ch1_meas, rp_osc_meas_res_t *ch2_meas,//ERG
+                    float ch1_max_adc_v, float ch2_max_adc_v,//ERG
+                    float ch1_user_dc_off, float ch2_user_dc_off);//ERG
+
 int rp_osc_decimate(float **cha_signal, int *in_cha_signal,
                     float **chb_signal, int *in_chb_signal,
                     float **time_signal, int dec_factor, 
                     float t_start, float t_stop, int time_unit);
+
 
 int rp_osc_decimate_partial(float **cha_out_signal, int *cha_in_signal, 
                             float **chb_out_signal, int *chb_in_signal,

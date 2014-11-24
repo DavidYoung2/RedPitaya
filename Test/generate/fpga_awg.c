@@ -166,3 +166,21 @@ int fpga_awg_exit(void)
 {
     return __awg_cleanup_mem();
 }
+
+/*----------------------------------------------------------------------------*/
+/**
+ * @brief Calculates maximum DAC voltage in [V].
+ * Calculation is done based on the specified Back end full scale voltage and
+ * the mapping function defined by FPGA design.
+ * @param[in]  be_gain_fs  Back end full scale voltage
+ * @retval maximum DAC voltage
+*/
+float fpga_awg_calc_dac_max_v(uint32_t be_gain_fs)
+{
+    float max_dac_v;
+
+    max_dac_v = 
+        be_gain_fs/(float)((uint64_t)1<<32) * 100;
+
+    return max_dac_v;
+}
