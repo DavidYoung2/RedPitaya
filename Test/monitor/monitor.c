@@ -105,6 +105,15 @@ typedef struct {
 	uint32_t vccDddr;
 } amsReg_t;
 
+int gAveraging = 0;
+int gAveragingCount = 0;
+useconds_t gusleepValue = 0;
+long double gTemp = 0.0;
+long double gAI0 = 0.0;
+long double gAI1 = 0.0;
+long double gAI2 = 0.0;
+long double gAI3 = 0.0;
+
 static float AmsConversion(ams_t a_ch, unsigned int a_raw)
 {
 	float uAdc;
@@ -119,6 +128,15 @@ static float AmsConversion(ams_t a_ch, unsigned int a_raw)
 			}
 			uAdc=(float)a_raw/0x7ff*0.5;
 			val=uAdc*(30.0+4.99)/4.99;
+			if (gAveraging == 1) {
+				switch(a_ch){
+					case eAmsAI0: gAI0 += val; break;
+					case eAmsAI1: gAI1 += val; break;
+					case eAmsAI2: gAI2 += val; break;
+					case eAmsAI3: gAI3 += val; break;
+					default: break;
+				}
+			}
 		}
 		break;
 		case eAmsAI4:{
@@ -128,6 +146,7 @@ static float AmsConversion(ams_t a_ch, unsigned int a_raw)
 		break;
 		case eAmsTemp:{
 			val=((float)a_raw*503.975) / ADC_FULL_RANGE_CNT - 273.15;
+			if (gAveraging == 1) gTemp += val;
 		}
 		break;
 		case eAmsVCCPINT:
@@ -151,12 +170,15 @@ static float AmsConversion(ams_t a_ch, unsigned int a_raw)
 	return val;
 }
 
-static void AmsList(amsReg_t * a_amsReg)
+static void AmsList(amsReg_t * a_amsReg, int showOutput)
 {
-	uint32_t i,raw;
+	uint32_t i,raw,ergSendNum;
 	float val;
-	printf("#ID\tDesc\t\tRaw\tVal\n");
-	for(i=0;i<eSendNum;i++){
+	if (showOutput == 1) printf("#ID\tDesc\t\tRaw\tVal\n");
+	ergSendNum = eSendNum;
+	if (gAveraging == 1)
+		ergSendNum = 5;
+	for(i=0;i<ergSendNum;i++){
 		switch(i){
 			case eAmsTemp:
 			    raw=a_amsReg->temp;
@@ -210,7 +232,21 @@ static void AmsList(amsReg_t * a_amsReg)
 				break;
 		}
 		val=AmsConversion(i, raw);
-		printf("%d\t%s\t%x\t%.3f\n",i,&amsDesc[i][0],raw,val);
+		if (showOutput == 1) {
+			if (gAveraging == 0) {
+				printf("%d\t%s\t%x\t%.3f\n",i,&amsDesc[i][0],raw,val);
+			} else {
+				long double average = 0.0;
+				switch(i){
+					case eAmsTemp: average = gTemp / gAveragingCount; break;
+					case eAmsAI0: average = gAI0 / gAveragingCount; break;
+					case eAmsAI1: average = gAI1 / gAveragingCount; break;
+					case eAmsAI2: average = gAI2 / gAveragingCount; break;
+					case eAmsAI3: average = gAI3 / gAveragingCount; break;
+				}
+				printf("%d\t%s\t%x\t%.3Lf\n",i,&amsDesc[i][0],raw,average);
+			}
+		}
 	}
 }
 
@@ -254,7 +290,7 @@ int main(int argc, char **argv) {
 			"\nUsage:\n"
 			"\tread addr: address\n"
                         "\twrite addr: address value\n"
-			"\tread analog mixed signals: -ams\n"
+			"\tread analog mixed signals: -ams [-a for averaging over 1 sec [number of samples, default of 100]]\n"
 			"\tset slow DAC: -sdac AO0 AO1 AO2 AO3 [V]\n",
                         argv[0], VERSION_STR, REVISION_STR);
 		return EXIT_FAILURE;
@@ -264,6 +300,16 @@ int main(int argc, char **argv) {
 
 	/* Read from standard input */
 	if (strncmp(argv[1], "-ams", 4) == 0) {
+		if (argc > 2) {
+			if (strncmp(argv[2], "-a", 2) == 0) {
+				gAveraging = 1;
+				if (argc > 3)
+					gAveragingCount = atoi(argv[3]);
+				else
+					gAveragingCount = 100;//default
+				gusleepValue = (1000*1000) / gAveragingCount;//for usleep() over 1 second of sampling
+			}
+		}
 		uint32_t addr = c_addrAms;
 		amsReg_t* ams=NULL;
 		// Map one page
@@ -271,7 +317,19 @@ int main(int argc, char **argv) {
 		if(map_base == (void *) -1) FATAL;
 
 		ams = map_base + (addr & MAP_MASK);
-		AmsList(ams);
+		if (gAveraging == 0)
+			AmsList(ams, 1);
+		else {
+			int i;
+			for (i=0; i<gAveragingCount; i++) {
+				if (i+1 < gAveragingCount) {
+					AmsList(ams, 0);
+					usleep(gusleepValue);
+				} else {
+					AmsList(ams, 1);
+				}
+			}
+		}
 
 		if (map_base != (void*)(-1)) {
 			if(munmap(map_base, MAP_SIZE) == -1) FATAL;
