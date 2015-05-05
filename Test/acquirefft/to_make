@@ -1,0 +1,3 @@
+make CROSS_COMPILE=arm-linux-gnueabi- clean all
+
+scp acquirefft root@192.168.1.39:/tmp
