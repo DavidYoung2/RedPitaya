@@ -318,7 +318,7 @@ void usage() {
             "    DEC                 Decimation [%u,%u,%u,%u,%u,%u]\n"
             "    BIN                    Binning [%u,%u,%u,%u,%u,%u,%u,%u,%u]\n"
             "\nNumber of frequency domain values returned is %u / Binning\n"
-            "\n";
+            "v0.2 :: Equalization filter coefficients set to ZERO\n";
 
     fprintf( stderr, format, g_argv0,
              g_ch[0], g_ch[1],

@@ -192,13 +192,14 @@ int spectr_fpga_update_params(int trig_imm, int trig_source, int trig_edge,
     int fpga_trig_thr = spectr_fpga_cnv_v_to_cnt(trig_level);
 
     /* Equalization filter coefficients */
-    uint32_t gain_hi_cha_filt_aa = 0x7D93;
-    uint32_t gain_hi_cha_filt_bb = 0x437C7;
+    // ERG :: do not use the defaults on aa, bb for acquirefft, set to zero
+    uint32_t gain_hi_cha_filt_aa = 0x0;//0x7D93;
+    uint32_t gain_hi_cha_filt_bb = 0x0;//0x437C7;
     uint32_t gain_hi_cha_filt_pp = 0x0;
     uint32_t gain_hi_cha_filt_kk = 0xffffff;
     
-    uint32_t gain_hi_chb_filt_aa = 0x7D93;
-    uint32_t gain_hi_chb_filt_bb = 0x437C7;
+    uint32_t gain_hi_chb_filt_aa = 0x0;//0x7D93;
+    uint32_t gain_hi_chb_filt_bb = 0x0;//0x437C7;
     uint32_t gain_hi_chb_filt_pp = 0x0;
     uint32_t gain_hi_chb_filt_kk = 0xffffff;
     
