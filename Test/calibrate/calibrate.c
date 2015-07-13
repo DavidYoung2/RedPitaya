@@ -49,7 +49,7 @@ int main(int argc, char *argv[])
   float ch1_be_v1_final, ch1_be_v2_final, ch1_be_offset;
   float ch1_fe_positive_after, ch1_fe_negative_after, ch1_fe_offset;
 
-  printf("### calibrate v0.1\n\n");
+  printf("### calibrate v0.2\n\n");
 
   for (int i = 0; i < 2; i++) {
 
@@ -115,6 +115,16 @@ int main(int argc, char *argv[])
   be_ratio_adjust = be_pk_to_pk_sum / 1.6;
   printf("1 be_ratio_adjust=%f\n", be_ratio_adjust);
   be_ratio_adjust *= 42755331;
+
+////////////////////////////////////////////////////////////////////////////////////////////
+
+  int adjust_loop = 10;
+  while (adjust_loop != 0) {
+  if (adjust_loop == 1)
+    be_ratio_adjust -= 4000;
+  else
+  if (adjust_loop == 2)
+    be_ratio_adjust += 4000;
   printf("2 be_ratio_adjust=%f\n", be_ratio_adjust);
   sprintf(cmd, "calib -r | awk '{$%d=%d}1' | calib -w", i+7, (int)be_ratio_adjust);//7 or 8
   printf("> %s\n", cmd);
@@ -162,8 +172,15 @@ int main(int argc, char *argv[])
 
   be_pk_to_pk_sum = be_v1 - be_v2;
   printf("be_pk_to_pk_sum=%f\n", be_pk_to_pk_sum);
-  be_ratio_adjust = be_pk_to_pk_sum / 1.6;
-  printf("1 be_ratio_adjust=%f\n", be_ratio_adjust);
+  //be_ratio_adjust = be_pk_to_pk_sum / 1.6;
+  //printf("1 be_ratio_adjust=%f\n", be_ratio_adjust);
+
+  printf("be_pk_to_pk_sum should be as close as possible to 1.6000\n");
+  printf("0 = Good, continue, 1 = Tweek higher, 2 = Tweek lower: ");
+  retval = scanf("%d", &adjust_loop);
+  }//adjust_loop
+
+/////////////////////////////////////////////////////////
 
   printf("\n### BE_CH%d_DC_offs calibration ###\n", i+1);
   printf("\nGenerating CH%d DC signal of 0.0 volts:\n", i+1);
@@ -191,6 +208,16 @@ int main(int argc, char *argv[])
   be_offset_adjust_int = (int)be_offset_adjust;
   printf("be_offset_adjust_int=%d\n", be_offset_adjust_int);
   be_offset_final = -150 - be_offset_adjust_int;
+
+///////////////////////////////////////////////////////////////////////////////////////
+
+  adjust_loop = 10;
+  while (adjust_loop != 0) {
+  if (adjust_loop == 1)
+    be_offset_final += 1;
+  else
+  if (adjust_loop == 2)
+    be_offset_final -= 1;
   sprintf(cmd, "calib -r | awk '{$%d=%d}1' | calib -w", i+9, be_offset_final);//9 or 10
   printf("> %s\n", cmd);
   system(cmd);
@@ -214,6 +241,12 @@ int main(int argc, char *argv[])
       getchar();
     }
   }
+  printf("The Zero offset should be as close as possible to 0.0000\n");
+  printf("0 = Good, continue, 1 = Tweek higher, 2 = Tweek lower: ");
+  retval = scanf("%d", &adjust_loop);
+  }//adjust_loop
+
+/////////////////////////////////////////////////////////////
 
   printf("\nGenerating CH%d DC signal of 0.8 volts:\n", i+1);
   sprintf(cmd, "generate %d 0 0 sine 0.8", i+1);
